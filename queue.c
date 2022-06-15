@@ -1,3 +1,4 @@
+// GRR20203892 Eduardo Gobbo Willi Vasconellos Gonçalves
 #include "queue.h"
 #include <stdio.h>
 
@@ -6,19 +7,18 @@ void queue_print (char *name, queue_t *queue, void print_elem (void*) )
 {
     printf("%s: [", name);
 
-    // if queue not empty
     if (queue) 
-    {
+    {   // if queue not empty
         queue_t *aux = queue->next;     // print first element
         print_elem((void*) queue);
         
-        while(aux != queue)             // iterate and print 
+        while(aux != queue)             // iterate and print elems
         {
-            print_elem((void*) aux);    // cast to (void*) queue_t
+            printf(" ");
+            print_elem((void*) aux);    // cast queue_t to (void*)
             aux = aux->next;
         }
     }
-
     printf("]\n");
 }
 
@@ -26,21 +26,21 @@ void queue_print (char *name, queue_t *queue, void print_elem (void*) )
 int queue_append (queue_t **queue, queue_t *elem)
 {
     // VALIDATE //
-    if((elem->next != NULL) || (elem->prev != NULL))
-    {   // element must be disconnected
-        fprintf(stderr, "### ERROR: tried to append element connected to another list\n");
+    if(!elem)
+    {   // element must exist
+        fprintf(stderr, "### ERROR: tried to append a nonexistent element in a list\n");
         return -1;
     }
 
     if(!queue)
     {   // list must exist
-        fprintf(stderr, "### ERROR: tried to append element to nonexistent list\n");
+        fprintf(stderr, "### ERROR: tried to append an element to a nonexistent list\n");
         return -2;
     }
 
-    if(!elem)
-    {   // element must exist
-        fprintf(stderr, "### ERROR: tried to append nonexistent element to list\n");
+    if((elem->next != NULL) || (elem->prev != NULL))
+    {   // element must be disconnected
+        fprintf(stderr, "### ERROR: tried to append an element connected to another list\n");
         return -3;
     }
 
@@ -61,36 +61,33 @@ int queue_append (queue_t **queue, queue_t *elem)
         (*queue)->prev= elem;           // set list's first
         return 0;
     }   
-
-    fprintf(stderr, "something went wrong with append\n");
-    return -1;
 }
 
 
 int queue_remove (queue_t **queue, queue_t *elem)
 {
     // VALIDATE //
-    if((elem->next == NULL) || (elem->prev == NULL))
-    {   // element must be connected
-        fprintf(stderr, "### ERROR: tried to remove element not connected to list\n");
-        return -4;
-    }
-
     if(!queue)
     {   // list must exist
-        fprintf(stderr, "### ERROR: tried to remove element from nonexistent list\n");
-        return -5;
+        fprintf(stderr, "### ERROR: tried to remove an element from a nonexistent list\n");
+        return -4;
     }
 
     if(!elem)
     {   // element must exist
-        fprintf(stderr, "### ERROR: tried to remove nonexistent element from list\n");
+        fprintf(stderr, "### ERROR: tried to remove a nonexistent element from a list\n");
+        return -5;
+    }
+
+    if((elem->next == NULL) || (elem->prev == NULL))
+    {   // element must be connected
+        fprintf(stderr, "### ERROR: tried to remove an element not connected in a list\n");
         return -6;
     }
 
     if(!(*queue))
     {   // list must have at least one element
-        fprintf(stderr, "### ERROR: tried to remove element from a empty list\n");
+        fprintf(stderr, "### ERROR: tried to remove an element from an empty list\n");
         return -7;
     }
 
@@ -108,7 +105,7 @@ int queue_remove (queue_t **queue, queue_t *elem)
 
     if(!found)
     {   // element must belong to list
-        fprintf(stderr, "### ERROR: tried to remove element from a different list\n");
+        fprintf(stderr, "### ERROR: tried to remove an element from a different list\n");
         return -8;
     }
 
@@ -130,9 +127,6 @@ int queue_remove (queue_t **queue, queue_t *elem)
         elem->prev = NULL;
         return 0;
     }
-
-    fprintf(stderr, "something went wrong with remove\n");
-    return -1;
 }
 
 
@@ -145,12 +139,11 @@ int queue_size (queue_t *queue)
     // has at least one element
     int size = 1;
 
-    // save pointer to next as reference to first
+    // save pointer to next as reference to first elem
     queue_t *aux = queue->next;
 
-    // iterates over everyone
     while(aux != queue)
-    {
+    {   // iterates over everyone
         size++;
         aux = aux->next;
     }

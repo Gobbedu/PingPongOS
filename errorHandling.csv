@@ -1,0 +1,10 @@
+"ErrorNo Value", "Error", "Origin File"
+-1, "tried to append a nonexistent element in a list",     "queue.c"
+-2, "tried to append an element to a nonexistent list",    "queue.c"
+-3, "tried to append an element connected to another list","queue.c"
+-4, "tried to remove an element from a nonexistent list",  "queue.c"
+-5, "tried to remove a nonexistent element from a list",   "queue.c"
+-6, "tried to remove an element not connected in a list",  "queue.c"
+-7, "tried to remove an element from an empty list",       "queue.c"
+-8, "tried to remove an element from a different list",    "queue.c"
+
