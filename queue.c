@@ -40,7 +40,7 @@ int queue_append (queue_t **queue, queue_t *elem)
 
     if((elem->next != NULL) || (elem->prev != NULL))
     {   // element must be disconnected
-        fprintf(stderr, "### ERROR: tried to append an element connected to another list\n");
+        fprintf(stderr, "### ERROR: tried to append a connected element in a list\n");
         return -3;
     }
 
