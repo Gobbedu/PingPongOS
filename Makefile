@@ -1,10 +1,14 @@
 # GRR20203892 Eduardo Gobbo Willi Vasconellos Gonçalves
 
-testafila: queue.h queue.c testafila.c
-	gcc -Wall testafila.c queue.c -o testafila
+A=find . -iname 'testafila'
+
+contexts: contexts.c 
+	gcc -Wall contexts.c -o contexts
+
+# testafila: queue.h queue.c testafila.c
+# 	gcc -Wall testafila.c queue.c -o testafila
 
 clean:
-	rm *.o
-
-purge: clean
-	rm testafila
+# 	rm testafila 
+	rm contexts
+	
