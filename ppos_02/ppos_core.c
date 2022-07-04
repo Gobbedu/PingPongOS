@@ -21,7 +21,7 @@ void ppos_init ()
     TaskMain.id = ID++;     
     // TaskMain.next = NULL;   
     // TaskMain.prev = NULL;
-    getcontext(&(TaskMain.context));
+    // getcontext(&(TaskMain.context));
 
     CurrentTask = &TaskMain;
 

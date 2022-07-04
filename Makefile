@@ -1,7 +1,5 @@
 # GRR20203892 Eduardo Gobbo Willi Vasconellos Gonçalves
 
-A=find . -iname 'testafila'
-
 contexts: contexts.c 
 	gcc -Wall contexts.c -o contexts
 
