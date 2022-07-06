@@ -9,17 +9,17 @@
 // #define DEBUG
 #define STACKSIZE 64*1024	/* tamanho de pilha das threads */
 
-// func headers //
+/* core local function headers */
 void dispatcher_body();
 task_t *scheduler_body();
 void print_task(void *ptr);
 
 
-// global variables //
-enum TaskStates {NEW = 1, READY, RUNNING, SUSPENDED, ENDED };
+/* core global variables */
+enum TaskStates {NEW = 1, READY, RUNNING, SUSPENDED, TERMINATED };
 task_t TaskMain, TaskDispatcher;
 task_t *CurrentTask, *QueueReady;
-int ID = 0;         
+int TID, UserTasks;
 
 // Inicializa o sistema operacional; deve ser chamada no inicio do main()
 void ppos_init () 
@@ -27,16 +27,21 @@ void ppos_init ()
     /* desativa o buffer da saida padrao (stdout), usado pela função printf */
     setvbuf (stdout, 0, _IONBF, 0) ;
 
-    /* create main task */
-    TaskMain.id = ID++;     
-    TaskMain.next = NULL;   
-    TaskMain.prev = NULL;
-    // getcontext(&(TaskMain.context));
+    /* initialize core global values */
+    TID = 0;
+    UserTasks = 0;
 
+    /* create main task */
+    // task_create(&TaskMain, NULL, NULL);
+    // queue_remove((queue_t **) &QueueReady, (queue_t *) &TaskMain);
+    // UserTasks--;
+    TaskMain.id = TID++;
     CurrentTask = &TaskMain;
 
     /* create dispatcher task */
     task_create(&TaskDispatcher, dispatcher_body, NULL);
+    queue_remove((queue_t **) &QueueReady, (queue_t *) &TaskDispatcher);
+    UserTasks--;
 
     #ifdef DEBUG
     printf("PPOS: system initialized\n");
@@ -66,7 +71,10 @@ int task_create (task_t *task,			        // descritor da nova tarefa
     // CREATE TASK //
     char* stack;
     
-    task->id = ID++;
+    // set task initial state & identifiers
+    task->status = NEW;
+    task->id = TID++;
+    UserTasks++;
     
     getcontext(&(task->context));
 
@@ -87,18 +95,20 @@ int task_create (task_t *task,			        // descritor da nova tarefa
     // creating task body function
     makecontext(&(task->context), (void *)start_func, 1, arg);
 
+    // prepare to append task 
     task->next = NULL;
     task->prev = NULL;
 
-    // append to ready list tasks excluding main & dispatcher
-    if(task->id > 1)    
-        queue_append((queue_t **) &QueueReady, (queue_t *) task);
+    // append task to global queue
+    queue_append((queue_t **) &QueueReady, (queue_t *) task);
     
 
     #ifdef DEBUG
     printf("PPOS: task %d created by task %d (body function %p)\n", task->id, CurrentTask->id, start_func);
     #endif
 
+    // finished creating task
+    task->status = READY;
     return task->id;
 }
 
@@ -109,16 +119,10 @@ void task_exit (int exit_code)
     printf("PPOS: task %d exited\n", CurrentTask->id);
     #endif  
 
-    // remove task from queueReady (except dispatcher task)
-    if(CurrentTask != &TaskDispatcher)
-    {
-        queue_remove((queue_t **) &QueueReady, (queue_t *) CurrentTask);
-        task_switch(&TaskDispatcher);
-    }
+    CurrentTask->status = TERMINATED;
 
-    task_switch(&TaskMain);
-
-    // exit(exit_code);
+    // return control to dispatcher (except if dispatcher exit)
+    (CurrentTask != &TaskDispatcher) ? task_switch(&TaskDispatcher) : task_switch(&TaskMain);
 }
 
 // alterna a execução para a tarefa indicada
@@ -131,37 +135,25 @@ int task_switch (task_t *task)
         return -11;
     }
 
-    if(!CurrentTask)
-    {   // current task must always exist
-        fprintf(stderr, "### ERROR: tried to switch to a task with an empty current task pointer\n");
-        return -12;
-
-    }
-
     // SWITCH //
-    ucontext_t *current_context;
-    current_context = &(CurrentTask->context);
-    
     #ifdef DEBUG
     printf("PPOS: switch task %d -> task %d\n", CurrentTask->id, task->id);
     // queue_print("Ready ", (queue_t *) QueueReady, print_task);
     #endif
 
-    CurrentTask = task;
-    swapcontext(current_context, &(task->context));
+    // save old context
+    ucontext_t *current_context = &(CurrentTask->context);
+    
+    CurrentTask = task;                             // update current task pointer
+    CurrentTask->status = RUNNING;                  // new task is running
+    swapcontext(current_context, &(task->context)); // swap old cpu register data with new task data
 
     return 0;
 }   
 
 // retorna o identificador da tarefa corrente (main deve ser 0)
 int task_id () 
-{
-    if(!CurrentTask)
-    {   // current task must always exist
-        fprintf(stderr, "### ERROR: tried to fetch id of an empty Current Task pointer\n");
-        return -13;
-    }
-        
+{   
     return CurrentTask->id;
 }
 
@@ -173,6 +165,8 @@ void task_yield ()
     printf("PPOS: task %d yields the CPU\n", CurrentTask->id);
     #endif
 
+    // yielding the cpu, change task state
+    CurrentTask->status = READY;
     task_switch(&TaskDispatcher);
 }
 
@@ -197,7 +191,7 @@ void dispatcher_body()
 
     task_t *next_task;
 
-    while(queue_size((queue_t *) QueueReady) > 0 )
+    while(UserTasks)
     {   // enquanto houverem tarefas de usuário
         // escolhe a próxima tarefa a executar
         next_task = scheduler_body();
@@ -205,10 +199,6 @@ void dispatcher_body()
         if(next_task)
         {   // next task must exist (!NULL)
             task_switch(next_task);
-
-            #ifdef DEBUG
-            queue_print("Ready ", (queue_t *) QueueReady, print_task);
-            #endif
 
             switch (next_task->status)
             {
@@ -224,12 +214,19 @@ void dispatcher_body()
                 case SUSPENDED:
                     break;
                 
-                case ENDED:
+                case TERMINATED:
+                    // printf("trying to remove task %d\n", next_task->id);
+                    queue_remove((queue_t **) &QueueReady, (queue_t *) next_task);
+                    UserTasks--;
                     break;
                 
                 default:
                     break;
             }
+
+            #ifdef DEBUG
+            queue_print("Ready ", (queue_t *) QueueReady, print_task);
+            #endif
         }
     }
 
