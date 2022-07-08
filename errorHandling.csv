@@ -10,3 +10,4 @@
 -9  , "tried to create a task with an empty task descriptor",               "ppos_core.c"
 -10 , "tried to create a task with an empty body function",                 "ppos_core.c"
 -11 , "tried to switch to a task with an empty task descriptor",            "ppos_core.c"
+Nan , "tried to set static priority value out of range [-20 .. +19]",       "ppos_core.c"

@@ -11,8 +11,7 @@
 
 /* core local function headers */
 void dispatcher_body();
-task_t *scheduler_fcfs();
-task_t *(*scheduler_body)();
+task_t *(*scheduler_body)(), *scheduler_fcfs(), *scheduler_prio();
 void print_task(void *ptr);
 
 
@@ -31,12 +30,9 @@ void ppos_init ()
     /* initialize core global values */
     TID = 0;
     UserTasks = 0;
-    scheduler_body = &scheduler_fcfs;
+    scheduler_body = &scheduler_prio;
+    // scheduler_body = &scheduler_fcfs;
 
-    /* create main task */
-    // task_create(&TaskMain, NULL, NULL);
-    // queue_remove((queue_t **) &QueueReady, (queue_t *) &TaskMain);
-    // UserTasks--;
     TaskMain.id = TID++;
     CurrentTask = &TaskMain;
 
@@ -74,8 +70,10 @@ int task_create (task_t *task,			        // descritor da nova tarefa
     char* stack;
     
     // set task initial state & identifiers
-    task->status = NEW;
     task->id = TID++;
+    task->status = NEW;
+    task->static_prio = 0;
+    task->dynamic_prio = 0;
     UserTasks++;
     
     getcontext(&(task->context));
@@ -104,13 +102,13 @@ int task_create (task_t *task,			        // descritor da nova tarefa
     // append task to global queue
     queue_append((queue_t **) &QueueReady, (queue_t *) task);
     
+    // finished creating task
+    task->status = READY;
 
     #ifdef DEBUG
     printf("PPOS: task %d created by task %d (body function %p)\n", task->id, CurrentTask->id, start_func);
     #endif
 
-    // finished creating task
-    task->status = READY;
     return task->id;
 }
 
@@ -125,6 +123,7 @@ void task_exit (int exit_code)
 
     // return control to dispatcher (except if dispatcher exit)
     (CurrentTask != &TaskDispatcher) ? task_switch(&TaskDispatcher) : task_switch(&TaskMain);
+    
 }
 
 // alterna a execução para a tarefa indicada
@@ -160,6 +159,7 @@ int task_id ()
     return CurrentTask->id;
 }
 
+
 // libera o processador para a próxima tarefa, retornando à fila de tarefas
 // prontas ("ready queue")
 void task_yield ()
@@ -173,15 +173,42 @@ void task_yield ()
     task_switch(&TaskDispatcher);
 }
 
-// function to print tasks with queue print
-void print_task(void *ptr)
+
+// define a prioridade estática de uma tarefa (ou a tarefa atual)
+void task_setprio (task_t *task, int prio)
 {
-    task_t *task = ptr;
-
-    if(!task)   // task must exist to be printed
+    if( prio > 19 || prio < -20)
+    {
+        fprintf(stderr, "### ERROR: tried to set static priority value out of range [-20 .. +19]\n");
         return;
+    }
 
-    printf("%d", task->id);
+    if(!task)
+    {
+        CurrentTask->static_prio = prio;
+        CurrentTask->dynamic_prio = prio;
+        #ifdef DEBUG
+        printf("PPOS: set task %d with priority %d\n", CurrentTask->id, CurrentTask->static_prio);
+        #endif
+    }
+    else
+    {
+        task->static_prio = prio;
+        task->dynamic_prio = prio;
+        #ifdef DEBUG
+        printf("PPOS: set task %d with priority %d\n", task->id, task->static_prio);
+        #endif
+    }
+
+}
+
+// retorna a prioridade estática de uma tarefa (ou a tarefa atual)
+int task_getprio (task_t *task)
+{
+    if(!task) // if task == NULL
+        return CurrentTask->static_prio;
+
+    return task->static_prio;
 }
 
 // 
@@ -218,8 +245,8 @@ void dispatcher_body()
                     break;
                 
                 case TERMINATED:
-                    // printf("trying to remove task %d\n", next_task->id);
                     queue_remove((queue_t **) &QueueReady, (queue_t *) next_task);
+                    free((next_task->context).uc_stack.ss_sp);    // free stack
                     UserTasks--;
                     break;
                 
@@ -240,7 +267,57 @@ void dispatcher_body()
 task_t *scheduler_fcfs()
 {
     task_t *next = QueueReady;
-    QueueReady = QueueReady->next;
+    if(QueueReady)  // if list not empty (NULL)
+        QueueReady = QueueReady->next;
 
     return next;
+}
+
+task_t *scheduler_prio()
+{
+    if(!QueueReady) // if list is empty
+        return NULL;
+
+    int alpha = -1;
+    int max_prio = 20;
+    task_t *hike, *next;
+    hike = QueueReady;
+
+    // set next task;
+    do
+    {
+        if(hike->dynamic_prio < max_prio)
+        {
+            max_prio = hike->dynamic_prio;
+            next = hike;
+        }
+        hike = hike->next;
+    }   while(hike != QueueReady);
+
+    // grow tasks beard
+    do
+    {
+        if(hike != next)
+            hike->dynamic_prio += alpha;
+
+        hike = hike->next;
+    }   while(hike != QueueReady);
+
+    next->dynamic_prio = next->static_prio;
+
+    return next;
+}
+
+
+// ============ AUXILIAR FUNCITONS ============ // 
+
+// function to print tasks with queue print
+void print_task(void *ptr)
+{
+    task_t *task = ptr;
+
+    if(!task)   // task must exist to be printed
+        return;
+
+    printf("%d", task->id);
 }
