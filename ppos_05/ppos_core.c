@@ -1,7 +1,11 @@
 // Eduardo Gobbo Willi Vasconcellos Gonçalves GRR20203892
 
 #include <stdlib.h>
+#include <signal.h>
 #include <stdio.h>
+#include <signal.h>
+#include <sys/time.h>
+
 #include "queue.h"
 #include "ppos.h"
 #include "ppos_data.h"
@@ -12,10 +16,13 @@
 /* core local function headers */
 void dispatcher_body();
 task_t *(*scheduler_body)(), *scheduler_fcfs(), *scheduler_prio();
-void print_task(void *ptr);
+void print_task(void *ptr), tick_init(), tick_manager();
 
 
 /* core global variables */
+struct sigaction tick_action;
+struct itimerval timer;
+unsigned short quantum;
 enum TaskStates {NEW = 1, READY, RUNNING, SUSPENDED, TERMINATED };
 task_t TaskMain, TaskDispatcher;
 task_t *CurrentTask, *QueueReady;
@@ -40,6 +47,8 @@ void ppos_init ()
     task_create(&TaskDispatcher, dispatcher_body, NULL);
     queue_remove((queue_t **) &QueueReady, (queue_t *) &TaskDispatcher);
     UserTasks--;
+
+    tick_init();
 
     #ifdef DEBUG
     printf("PPOS: system initialized\n");
@@ -237,6 +246,7 @@ void dispatcher_body()
 
         if(next_task)
         {   // next task must exist (!NULL)
+            quantum = 20;
             task_switch(next_task);
 
             switch (next_task->status)
@@ -317,7 +327,44 @@ task_t *scheduler_prio()
     return next;
 }
 
+void tick_init()
+{
+    // registra a ação para o sinal de timer SIGALRM
+    tick_action.sa_handler = tick_manager ;
+    sigemptyset (&tick_action.sa_mask) ;
+    tick_action.sa_flags = 0 ;
+    if (sigaction (SIGALRM, &tick_action, 0) < 0)
+    {
+        perror ("Erro em sigaction: ") ;
+        exit (1) ;
+    }
 
+    // ajusta valores do temporizador
+    timer.it_value.tv_usec = 1000 ;      // primeiro disparo, em micro-segundos
+    timer.it_value.tv_sec  = 0 ;      // primeiro disparo, em segundos
+    timer.it_interval.tv_usec = 1000 ;   // disparos subsequentes, em micro-segundos
+    timer.it_interval.tv_sec  = 0 ;   // disparos subsequentes, em segundos
+
+    // arma o temporizador ITIMER_REAL (vide man setitimer)
+    if (setitimer (ITIMER_REAL, &timer, 0) < 0)
+    {
+        perror ("Erro em setitimer: ") ;
+        exit (1) ;
+    }
+}
+
+void tick_manager()
+{
+    // quantum = (quantum > 0) ? --quantum ;
+    if(CurrentTask->id > 1) 
+    {   // user tasks
+        if(quantum == 0) task_yield();
+        --quantum;
+    }
+    // else quantum = 20; // kernel tasks
+    
+    // printf ("Recebi o sinal %d, quantum = %d\n", -1, quantum) ;
+}
 // ============ AUXILIAR FUNCITONS ============ // 
 
 // function to print tasks with queue print
