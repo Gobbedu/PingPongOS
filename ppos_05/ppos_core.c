@@ -14,19 +14,18 @@
 #define STACKSIZE 64*1024	/* tamanho de pilha das threads */
 
 /* core local function headers */
-void dispatcher_body();
 task_t *(*scheduler_body)(), *scheduler_fcfs(), *scheduler_prio();
 void print_task(void *ptr), tick_init(), tick_manager();
+void dispatcher_body();
 
 
 /* core global variables */
+enum TaskStates {NEW = 1, READY, RUNNING, SUSPENDED, TERMINATED };
+task_t TaskMain, TaskDispatcher, *CurrentTask, *QueueReady;
+unsigned short quantum;     // counts between 0 and 20
 struct sigaction tick_action;
 struct itimerval timer;
-unsigned short quantum;
-enum TaskStates {NEW = 1, READY, RUNNING, SUSPENDED, TERMINATED };
-task_t TaskMain, TaskDispatcher;
-task_t *CurrentTask, *QueueReady;
-int TID, UserTasks;
+int TID, UserTasks;             // TID: Task ID, incrementa infinitamente; UserTasks: numero de tasks com TID > 2 
 
 // Inicializa o sistema operacional; deve ser chamada no inicio do main()
 void ppos_init () 
@@ -246,7 +245,7 @@ void dispatcher_body()
 
         if(next_task)
         {   // next task must exist (!NULL)
-            quantum = 20;
+            quantum = 20;   // reseta quantum da proxima task
             task_switch(next_task);
 
             switch (next_task->status)
@@ -264,7 +263,7 @@ void dispatcher_body()
                     break;
                 
                 case TERMINATED:
-                    queue_remove((queue_t **) &QueueReady, (queue_t *) next_task);
+                    queue_remove((queue_t **) &QueueReady, (queue_t *) next_task);  // remove da lista de prontos
                     free((next_task->context).uc_stack.ss_sp);    // free stack
                     UserTasks--;
                     break;
