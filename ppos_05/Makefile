@@ -20,6 +20,7 @@ debug: all
 
 clean:
 	@rm -f $(PPOS_N)
+	@rm -f $(PPOS_N)-stress
 	@rm -f timer
 	@rm -f signal
 
