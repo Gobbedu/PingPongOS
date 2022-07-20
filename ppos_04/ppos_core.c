@@ -129,7 +129,7 @@ void task_exit (int exit_code)
     else
     {
         free(TaskDispatcher.context.uc_stack.ss_sp);    // free stack
-        task_switch(&TaskMain);
+        task_switch(&TaskMain);                         // exit from core
     }
 
     
@@ -184,9 +184,10 @@ void task_yield ()
 
 
 // define a prioridade estática de uma tarefa (ou a tarefa atual)
+// O escalonador deve usar prioridades no estilo UNIX (valores entre -20 e +20, com escala negativa).
 void task_setprio (task_t *task, int prio)
 {
-    if( prio > 19 || prio < -20)
+    if( prio > 20 || prio < -20)
     {
         fprintf(stderr, "### ERROR: tried to set static priority value out of range [-20 .. +19]\n");
         return;
