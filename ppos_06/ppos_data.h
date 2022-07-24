@@ -21,6 +21,10 @@ typedef struct task_t
   short preemptable ;			        // pode ser preemptada?
   short static_prio ;             // prioridade estatica da tarefa
   short dynamic_prio ;            // prioridade dinamica da tarefa
+  unsigned int proc_time;         // tempo gasto no processador
+  unsigned int live_time;         // tempo de vida da tarefa
+  unsigned int num_quant;         // numero de quantum recebido
+
   // ... (outros campos serão adicionados mais tarde)
 } task_t ;
 
