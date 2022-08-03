@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <signal.h>
 #include <sys/time.h>
+#include <stdbool.h>
 
 #include "queue.h"
 #include "ppos.h"
@@ -44,11 +45,13 @@ void ppos_init ()
     TaskMain.id = TID++;
     TaskMain.next = NULL;
     TaskMain.prev = NULL;
+    TaskMain.preemptable = true;
     queue_append((queue_t **) &QueueReady, (queue_t *) &TaskMain);
     CurrentTask = &TaskMain;
     UserTasks++;
 
     /* create dispatcher task */
+    TaskDispatcher.preemptable = false;
     task_create(&TaskDispatcher, dispatcher_body, NULL);
     queue_remove((queue_t **) &QueueReady, (queue_t *) &TaskDispatcher);
     UserTasks--;
@@ -88,14 +91,15 @@ int task_create (task_t *task,			        // descritor da nova tarefa
     char* stack;
     
     // set task initial state & identifiers
+    UserTasks++;
     task->id = TID++;
     task->status = NEW;
+    task->proc_time = 0;
+    task->num_quant = 0;
     task->static_prio = 0;
     task->dynamic_prio = 0;
-    task->proc_time = 0;
+    task->preemptable = true;
     task->live_time = systime();
-    task->num_quant = 0;
-    UserTasks++;
     
     getcontext(&(task->context));
 
@@ -388,7 +392,7 @@ void tick_manager()
 {
     GLOBAL_TICK++; // increment tick every 1 ms
 
-    if(CurrentTask->id != 1) 
+    if(CurrentTask->preemptable) 
     {   // user tasks
         --QUANTUM;
         if(QUANTUM == 0) task_yield();

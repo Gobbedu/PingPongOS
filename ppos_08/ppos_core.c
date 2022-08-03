@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <signal.h>
 #include <sys/time.h>
+#include <stdbool.h>
 
 #include "queue.h"
 #include "ppos.h"
@@ -44,11 +45,13 @@ void ppos_init ()
     TaskMain.id = TID++;
     TaskMain.next = NULL;
     TaskMain.prev = NULL;
+    TaskMain.preemptable = true;
     queue_append((queue_t **) &QueueReady, (queue_t *) &TaskMain);
     CurrentTask = &TaskMain;
     UserTasks++;
 
     /* create dispatcher task */
+    TaskDispatcher.preemptable = false;
     task_create(&TaskDispatcher, dispatcher_body, NULL);
     queue_remove((queue_t **) &QueueReady, (queue_t *) &TaskDispatcher);
     UserTasks--;
@@ -88,17 +91,19 @@ int task_create (task_t *task,			        // descritor da nova tarefa
     char* stack;
     
     // set task initial state & identifiers
+    UserTasks++;
     task->id = TID++;
     task->status = NEW;
+    task->proc_time = 0;
+    task->num_quant = 0;
     task->static_prio = 0;
     task->dynamic_prio = 0;
-    task->proc_time = 0;
+    task->preemptable = true;
     task->live_time = systime();
-    task->num_quant = 0;
-    UserTasks++;
     
     getcontext(&(task->context));
 
+    // allocate space for context stack
     stack = malloc (STACKSIZE) ;
     if (stack)
     {
@@ -116,15 +121,11 @@ int task_create (task_t *task,			        // descritor da nova tarefa
     // creating task body function
     makecontext(&(task->context), (void *)start_func, 1, arg);
 
-    // prepare to append task 
+    // append task to queue ready
     task->next = NULL;
     task->prev = NULL;
-
-    // append task to global queue
-    queue_append((queue_t **) &QueueReady, (queue_t *) task);
-    
-    // finished creating task
     task->status = READY;
+    queue_append((queue_t **) &QueueReady, (queue_t *) task);    
 
     #ifdef DEBUG
     printf("PPOS: task %d created by task %d (body function %p)\n", task->id, CurrentTask->id, start_func);
@@ -136,6 +137,8 @@ int task_create (task_t *task,			        // descritor da nova tarefa
 // Termina a tarefa corrente, indicando um valor de status encerramento
 void task_exit (int exit_code) 
 {
+    task_t *heir;
+    
     // total time since task creation
     CurrentTask->live_time = systime() - CurrentTask->live_time;
 
@@ -151,7 +154,14 @@ void task_exit (int exit_code)
     CurrentTask->status = TERMINATED;
 
     // if QueueHeritage is not null, remove and append task(s) to queue_ready
-    // TODO
+    for(int i = 0; i < queue_size((queue_t*)CurrentTask->QueueHeritage); i++)
+    {
+        heir = CurrentTask->QueueHeritage;
+        task_resume (heir, &(CurrentTask->QueueHeritage));
+    }
+    
+    // salva codigo de saida para task_join
+    CurrentTask->exit_code = exit_code;
 
     // return control to dispatcher (except if dispatcher exit)
     if(CurrentTask != &TaskDispatcher)
@@ -162,7 +172,6 @@ void task_exit (int exit_code)
         task_switch(&TaskMain);                         // exit from core
     }
 
-    
 }
 
 // alterna a execução para a tarefa indicada
@@ -256,15 +265,38 @@ int task_getprio (task_t *task)
 int task_join (task_t *task)
 {
     // VALIDATE //
+    // task is NULL pointer, do not suspend current task
     if(!task)
-    {   // task is NULL pointer
-        fprintf(stderr, "### ERROR: tried to switch to a task with an empty descriptor\n");
-        return -11;
-    }
+        return -12;
 
-    // ADD HERI //
-    // remove curent task from ready_list & append to queueHeritage
-    // TODO
+    // join with finished task
+    if(task->status == TERMINATED)
+        return -13;
+
+    // ADD HEIR //
+    // remove curent task from ready_list & append to QueueHeritage
+    task_suspend(&(task->QueueHeritage));
+
+    return task->exit_code;
+}
+
+// suspende a tarefa atual na fila "queue"
+void task_suspend (task_t **queue)
+{
+    queue_remove((queue_t **) &QueueReady, (queue_t *) CurrentTask);
+    CurrentTask->status = SUSPENDED;
+    queue_append((queue_t **) queue, (queue_t *) CurrentTask);
+
+    // return cpu to dispatcher
+    task_yield();
+}
+
+// acorda a tarefa indicada, que está suspensa na fila indicada
+void task_resume (task_t *task, task_t **queue)
+{
+    queue_remove((queue_t **) queue, (queue_t *) task);
+    task->status = READY;
+    queue_append((queue_t **) &(QueueReady), (queue_t *) task);
 }
 
 
@@ -406,7 +438,7 @@ void tick_manager()
 {
     GLOBAL_TICK++; // increment tick every 1 ms
 
-    if(CurrentTask->id != 1) 
+    if(CurrentTask->preemptable) 
     {   // user tasks
         --QUANTUM;
         if(QUANTUM == 0) task_yield();
@@ -429,5 +461,5 @@ void print_task(void *ptr)
     if(!task)   // task must exist to be printed
         return;
 
-    printf("%d", task->id);
+    printf("(%d)", task->id);
 }

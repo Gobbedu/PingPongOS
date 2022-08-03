@@ -24,8 +24,8 @@ typedef struct task_t
   unsigned int proc_time;         // tempo gasto no processador
   unsigned int live_time;         // tempo de vida da tarefa
   unsigned int num_quant;         // numero de quantum recebido
-  task_t *QueueHeritage;          // fila de tarefas esperando esta morrer
-
+  struct task_t *QueueHeritage;   // fila de tarefas esperando esta morrer
+  int exit_code;                  // codigo de saida da tarefa
   // ... (outros campos serão adicionados mais tarde)
 } task_t ;
 
