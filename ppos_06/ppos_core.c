@@ -23,7 +23,7 @@ void dispatcher_body();
 /* core global variables */
 enum TaskStates {NEW = 1, READY, RUNNING, SUSPENDED, TERMINATED };
 task_t TaskMain, TaskDispatcher, *CurrentTask, *QueueReady;
-unsigned short quantum;             // counts between 0 and 20
+unsigned short QUANTUM;             // counts between 0 and 20
 unsigned int GLOBAL_TICK;           // ticks since tick_init
 struct sigaction tick_action;
 struct itimerval timer;
@@ -264,7 +264,7 @@ void dispatcher_body()
 
         if(next_task)
         {   // next task must exist (!NULL)
-            quantum = 20;                       // reseta quantum da proxima task
+            QUANTUM = 20;                       // reseta quantum da proxima task
             proc_time = systime();              // processor time for task
             task_switch(next_task);
             next_task->proc_time += systime() - proc_time;
@@ -380,13 +380,11 @@ void tick_manager()
 {
     GLOBAL_TICK++; // increment tick every 1 ms
 
-    // quantum = (quantum > 0) ? --quantum ;
     if(CurrentTask->id > 1) 
     {   // user tasks
-        --quantum;
-        if(quantum == 0) task_yield();
+        --QUANTUM;
+        if(QUANTUM == 0) task_yield();
     }
-    // else quantum = 20; // kernel tasks
     
     // printf ("Recebi o sinal %d, quantum = %d\n", -1, quantum) ;
 }
