@@ -176,7 +176,8 @@ void task_exit (int exit_code)
     else
     {
         free(TaskDispatcher.context.uc_stack.ss_sp);    // free stack
-        task_switch(&TaskMain);                         // exit from core
+        // task_switch(&TaskMain);                         // exit from core
+        exit(0);                                        // terminate ppos
     }
 
 }
@@ -225,6 +226,7 @@ void task_yield ()
 
     // yielding the cpu, change task state
     CurrentTask->status = READY;
+    TaskDispatcher.num_quant++;         // incrementa numero de ativacoes do dispatcher
     task_switch(&TaskDispatcher);
 }
 
@@ -322,21 +324,21 @@ void dispatcher_body()
     #endif
 
     int proc_time, disp_time;
+    disp_time = systime();   // dipatcher cpu usage
     task_t *next_task;
-    TaskDispatcher.num_quant++;             // taskDispatcher contab info
 
     while(UserTasks)
     {   // enquanto houverem tarefas de usuário
-        disp_time = systime();   // dipatcher cpu usage
+
         dormitory_alarm();              // checar se alguem deve acordar
         next_task = scheduler_body();   // escolhe a próxima tarefa a executar
-        TaskDispatcher.proc_time += systime() - disp_time;
 
         if(next_task)
         {   // next task must exist (!NULL)
+
             QUANTUM = 20;                       // reseta quantum da proxima task
             next_task->num_quant++;             // number of quantums given for task
-            TaskDispatcher.num_quant++;         // incrementa numero de ativacoes do dispatcher
+
 
             switch (next_task->status)
             {
@@ -344,9 +346,11 @@ void dispatcher_body()
                     break;
                 
                 case READY:
+                    TaskDispatcher.proc_time += systime() - disp_time;
                     proc_time = systime();              // processor time for task
                     task_switch(next_task);
                     next_task->proc_time += systime() - proc_time;
+                    disp_time = systime();   // dipatcher cpu usage
                     break;
                 
                 case RUNNING:
@@ -371,7 +375,7 @@ void dispatcher_body()
         }
     }
 
-    // TaskDispatcher.proc_time = systime() - TaskDispatcher.proc_time;
+    TaskDispatcher.proc_time += systime() - disp_time;
     task_exit(0);
 }
 
