@@ -1,8 +1,7 @@
 # Eduardo Gobbo Willi Vasconcellos Gonçalves GRR20203892
 
 CFLAGS= -Wall
-# PPOS_TEST=pingpong-semaphore
-PPOS_TEST=pingpong-racecond
+PPOS_TEST=pingpong-prodcons
 .PHONY: $(PPOS_TEST)
 
 all: $(PPOS_TEST)
@@ -15,8 +14,7 @@ debug: CFLAGS+= -DCONTAB
 debug: all
 
 clean:
-	@rm -f pingpong-semaphore
-	@rm -f pingpong-racecond
+	@rm -f pingpong-prodcons
 	
 
 

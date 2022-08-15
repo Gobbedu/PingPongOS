@@ -1,10 +1,17 @@
+// Eduardo Gobbo Willi Vasconcellos Gonçalves GRR20203892
+
+// PingPongOS - PingPong Operating System
+// Prof. Carlos A. Maziero, DINF UFPR
+// Versão 1.4 -- Janeiro de 2022
+
+/*
+ *   INTER PROCCESS COMMUNICATIONS file
+ */
+
 #include <stdio.h>
 #include "ppos.h"
 #include "queue.h"
 
-/*
-    INTER PROCCESS COMMUNICATIONS
-*/
 
 int BIG_LOCK = 0;    // [0, 1] for atomic operation lock
 enum SEM_STATE {NEW = 1, CREATED, DESTROYED};
