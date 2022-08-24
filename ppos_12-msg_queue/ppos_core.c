@@ -12,7 +12,7 @@
 #include "ppos_data.h"
 
 // #define DEBUG            // Print operations
-// #define CONTAB           // Print tasks time info
+#define CONTAB           // Print tas   ks time info
 #define STACKSIZE 64*1024	/* tamanho de pilha das threads */
 
 /* core local function headers */
@@ -22,7 +22,6 @@ void dispatcher_body();
 void dormitory_alarm();
 
 /* core global variables */
-enum TaskStates {NEW = 1, READY, RUNNING, SUSPENDED, TERMINATED };
 task_t  TaskMain,                   // corpo tarefa main (essencialmente o boot)
         TaskDispatcher,             // corpo tarefa dispatcher
         *CurrentTask,               // apontador tarefa atual

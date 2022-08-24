@@ -11,6 +11,9 @@
 
 #include <ucontext.h>		// biblioteca POSIX de trocas de contexto
 
+// possible states inside the core, used by {tasks, semaphores, mqueues}
+enum States {NEW = 1, CREATED, READY, RUNNING, SUSPENDED, TERMINATED, DESTROYED };
+
 // Estrutura que define um Task Control Block (TCB)
 typedef struct task_t
 {
@@ -25,8 +28,8 @@ typedef struct task_t
   unsigned int live_time;         // tempo de vida da tarefa
   unsigned int num_quant;         // numero de quantum recebido
   struct task_t *QueueHeritage;   // fila de tarefas esperando esta morrer
-  int exit_code;                  // codigo de saida da tarefa
   unsigned int sleep_until;       // marca horario q task suspensa deve acordar
+  int exit_code;                  // codigo de saida da tarefa
   // ... (outros campos serão adicionados mais tarde)
 } task_t ;
 
@@ -51,9 +54,18 @@ typedef struct
 } barrier_t ;
 
 // estrutura que define uma fila de mensagens
-typedef struct
-{
-  // preencher quando necessário
-} mqueue_t ;
+typedef struct {
+    void **msgs;        // pointers to void pointers that holds the message
+    int status;         // status of mqueue
+    int ofsize;         // sizeof(mensagem)
+    int max_len;        // msgs[max_len]
+    int append;         // index to append new message 
+    int remove;         // index to remove message
+    int total;          // number of current messages
+    semaphore_t vaga;   // semaforo com numero de vagas
+    semaphore_t item;   // semaforo com numero de itens
+    semaphore_t buff;   // mutex que permite um acesso ao buffer
+} mqueue_t;
+
 
 #endif
