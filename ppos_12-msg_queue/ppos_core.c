@@ -5,29 +5,34 @@
 #include <stdio.h>
 #include <signal.h>
 #include <sys/time.h>
+#include <stdbool.h>
 
 #include "queue.h"
 #include "ppos.h"
 #include "ppos_data.h"
 
 // #define DEBUG            // Print operations
-#define CONTAB           // Print tasks time info
+// #define CONTAB           // Print tasks time info
 #define STACKSIZE 64*1024	/* tamanho de pilha das threads */
 
 /* core local function headers */
 task_t *(*scheduler_body)(), *scheduler_fcfs(), *scheduler_prio();
 void print_task(void *ptr), tick_init(), tick_manager();
 void dispatcher_body();
-
+void dormitory_alarm();
 
 /* core global variables */
 enum TaskStates {NEW = 1, READY, RUNNING, SUSPENDED, TERMINATED };
-task_t TaskMain, TaskDispatcher, *CurrentTask, *QueueReady;
+task_t  TaskMain,                   // corpo tarefa main (essencialmente o boot)
+        TaskDispatcher,             // corpo tarefa dispatcher
+        *CurrentTask,               // apontador tarefa atual
+        *QueueReady,                // Fila de tarefas prontas para executar
+        *QueueDorms;                // Fila Dormitorio (tarefas suspensas com task_sleep(ms))
 unsigned short QUANTUM;             // counts between 0 and 20
 unsigned int GLOBAL_TICK;           // ticks since tick_init
 struct sigaction tick_action;
 struct itimerval timer;
-int TID, UserTasks;                 // TID: Task ID, incrementa infinitamente; UserTasks: numero de tasks com TID > 2 
+int TID, UserTasks;                 // TID: Task ID, incrementa infinitamente; UserTasks: numero de tasks com 
 
 // Inicializa o sistema operacional; deve ser chamada no inicio do main()
 void ppos_init () 
@@ -39,17 +44,27 @@ void ppos_init ()
     TID = 0;
     UserTasks = 0;
     scheduler_body = &scheduler_prio;
-    // scheduler_body = &scheduler_fcfs;
 
+    /* task main's descriptor */
     TaskMain.id = TID++;
+    TaskMain.next = NULL;
+    TaskMain.prev = NULL;
+    TaskMain.preemptable = true;
+    queue_append((queue_t **) &QueueReady, (queue_t *) &TaskMain);
     CurrentTask = &TaskMain;
+    UserTasks++;
 
     /* create dispatcher task */
+    TaskDispatcher.preemptable = false;
     task_create(&TaskDispatcher, dispatcher_body, NULL);
     queue_remove((queue_t **) &QueueReady, (queue_t *) &TaskDispatcher);
     UserTasks--;
 
+    /* initialize ppos clock */
     tick_init();
+
+    /* initialize dispatcher */
+    task_yield();
 
     #ifdef DEBUG
     printf("PPOS: system initialized\n");
@@ -80,17 +95,20 @@ int task_create (task_t *task,			        // descritor da nova tarefa
     char* stack;
     
     // set task initial state & identifiers
+    UserTasks++;
     task->id = TID++;
     task->status = NEW;
+    task->proc_time = 0;
+    task->num_quant = 0;
+    task->sleep_until = 0;
     task->static_prio = 0;
     task->dynamic_prio = 0;
-    task->proc_time = 0;
+    task->preemptable = true;
     task->live_time = systime();
-    task->num_quant = 0;
-    UserTasks++;
     
     getcontext(&(task->context));
 
+    // allocate space for context stack
     stack = malloc (STACKSIZE) ;
     if (stack)
     {
@@ -108,15 +126,11 @@ int task_create (task_t *task,			        // descritor da nova tarefa
     // creating task body function
     makecontext(&(task->context), (void *)start_func, 1, arg);
 
-    // prepare to append task 
+    // append task to queue ready
     task->next = NULL;
     task->prev = NULL;
-
-    // append task to global queue
-    queue_append((queue_t **) &QueueReady, (queue_t *) task);
-    
-    // finished creating task
     task->status = READY;
+    queue_append((queue_t **) &QueueReady, (queue_t *) task);    
 
     #ifdef DEBUG
     printf("PPOS: task %d created by task %d (body function %p)\n", task->id, CurrentTask->id, start_func);
@@ -128,6 +142,9 @@ int task_create (task_t *task,			        // descritor da nova tarefa
 // Termina a tarefa corrente, indicando um valor de status encerramento
 void task_exit (int exit_code) 
 {
+    task_t *heir;
+    int num_heirs;
+    
     // total time since task creation
     CurrentTask->live_time = systime() - CurrentTask->live_time;
 
@@ -142,18 +159,27 @@ void task_exit (int exit_code)
 
     CurrentTask->status = TERMINATED;
 
-    // return control to dispatcher (except if dispatcher exit)
-    // (CurrentTask != &TaskDispatcher) ? task_switch(&TaskDispatcher) : task_switch(&TaskMain);
+    // if QueueHeritage is not null, remove and append task(s) to queue_ready
+    num_heirs = queue_size((queue_t*)CurrentTask->QueueHeritage);
+    for(int i = 0; i < num_heirs; i++)
+    {
+        heir = CurrentTask->QueueHeritage;
+        task_resume (heir, &(CurrentTask->QueueHeritage));
+    }
+    
+    // salva codigo de saida para task_join
+    CurrentTask->exit_code = exit_code;
 
+    // return control to dispatcher (except if dispatcher exit)
     if(CurrentTask != &TaskDispatcher)
         task_switch(&TaskDispatcher);
     else
     {
         free(TaskDispatcher.context.uc_stack.ss_sp);    // free stack
-        task_switch(&TaskMain);                         // exit from core
+        // task_switch(&TaskMain);                         // exit from core
+        exit(0);                                        // terminate ppos
     }
 
-    
 }
 
 // alterna a execução para a tarefa indicada
@@ -200,6 +226,7 @@ void task_yield ()
 
     // yielding the cpu, change task state
     CurrentTask->status = READY;
+    TaskDispatcher.num_quant++;         // incrementa numero de ativacoes do dispatcher
     task_switch(&TaskDispatcher);
 }
 
@@ -242,6 +269,52 @@ int task_getprio (task_t *task)
     return task->static_prio;
 }
 
+
+// a tarefa corrente aguarda o encerramento de outra task
+int task_join (task_t *task)
+{
+    // VALIDATE //
+    // task is NULL pointer, do not suspend current task
+    if(!task)
+        return -12;
+
+    // join with finished task
+    if(task->status == TERMINATED)
+        return -13;
+
+    // ADD HEIR //
+    // remove curent task from ready_list & append to QueueHeritage
+    task_suspend(&(task->QueueHeritage));
+
+    return task->exit_code;
+}
+
+// suspende a tarefa atual na fila "queue"
+void task_suspend (task_t **queue)
+{
+    queue_remove((queue_t **) &QueueReady, (queue_t *) CurrentTask);
+    CurrentTask->status = SUSPENDED;
+    queue_append((queue_t **) queue, (queue_t *) CurrentTask);
+
+    // return cpu to dispatcher
+    task_yield();
+}
+
+// acorda a tarefa indicada, que está suspensa na fila indicada
+void task_resume (task_t *task, task_t **queue)
+{
+    queue_remove((queue_t **) queue, (queue_t *) task);
+    task->status = READY;
+    queue_append((queue_t **) &(QueueReady), (queue_t *) task);
+}
+
+// suspende a tarefa corrente por t milissegundos
+void task_sleep (int t)
+{
+    CurrentTask->sleep_until = systime() + t;
+    task_suspend(&QueueDorms);
+}
+
 // 
 void dispatcher_body()
 {
@@ -250,24 +323,22 @@ void dispatcher_body()
     queue_print("Ready ", (queue_t *) QueueReady, print_task);
     #endif
 
-    int proc_time;
+    int proc_time, disp_time;
+    disp_time = systime();   // dipatcher cpu usage
     task_t *next_task;
-    TaskDispatcher.num_quant++;     // taskDispatcher contab info
 
     while(UserTasks)
     {   // enquanto houverem tarefas de usuário
-        // incrementa numero de ativacoes do dispatcher
-        TaskDispatcher.num_quant++; 
 
+        dormitory_alarm();              // checar se alguem deve acordar
         next_task = scheduler_body();   // escolhe a próxima tarefa a executar
-        next_task->num_quant++;         // number of quantums given for task
 
         if(next_task)
         {   // next task must exist (!NULL)
+
             QUANTUM = 20;                       // reseta quantum da proxima task
-            proc_time = systime();              // processor time for task
-            task_switch(next_task);
-            next_task->proc_time += systime() - proc_time;
+            next_task->num_quant++;             // number of quantums given for task
+
 
             switch (next_task->status)
             {
@@ -275,6 +346,11 @@ void dispatcher_body()
                     break;
                 
                 case READY:
+                    TaskDispatcher.proc_time += systime() - disp_time;
+                    proc_time = systime();              // processor time for task
+                    task_switch(next_task);
+                    next_task->proc_time += systime() - proc_time;
+                    disp_time = systime();   // dipatcher cpu usage
                     break;
                 
                 case RUNNING:
@@ -299,6 +375,7 @@ void dispatcher_body()
         }
     }
 
+    TaskDispatcher.proc_time += systime() - disp_time;
     task_exit(0);
 }
 
@@ -380,13 +457,33 @@ void tick_manager()
 {
     GLOBAL_TICK++; // increment tick every 1 ms
 
-    if(CurrentTask->id > 1) 
+    if(CurrentTask->preemptable) 
     {   // user tasks
         --QUANTUM;
         if(QUANTUM == 0) task_yield();
     }
     
     // printf ("Recebi o sinal %d, quantum = %d\n", -1, quantum) ;
+}
+
+void dormitory_alarm()
+{
+    task_t *sleeper, *aux;
+    unsigned int num_sleepers, now;
+    num_sleepers = queue_size((queue_t*) QueueDorms);
+    sleeper = QueueDorms;
+    now = systime();
+
+    // queue_print("dormitorio ", QueueDorms, print_task);
+
+    for(int i = 0; i < num_sleepers; i++)
+    {   // iterates over dormitory tasks 
+        aux = sleeper->next;
+        if(sleeper->sleep_until <= now)
+            task_resume(sleeper, &QueueDorms);
+
+        sleeper = aux;
+    }
 }
 
 unsigned int systime()
@@ -403,5 +500,5 @@ void print_task(void *ptr)
     if(!task)   // task must exist to be printed
         return;
 
-    printf("%d", task->id);
+    printf("(%d)", task->id);
 }

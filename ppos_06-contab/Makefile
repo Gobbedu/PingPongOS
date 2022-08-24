@@ -12,9 +12,6 @@ $(PPOS_TEST):
 stress: PPOS_TEST=pingpong-contab-prio
 stress: all
 
-debug: CFLAGS+= -DCONTAB
-debug: stress
-
 clean:
 	@rm -f pingpong-contab
 	@rm -f pingpong-contab-prio
