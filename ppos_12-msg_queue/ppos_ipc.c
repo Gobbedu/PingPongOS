@@ -195,17 +195,11 @@ int mqueue_send (mqueue_t *queue, void *msg){
         fprintf(stderr, "tentou operar em um mqueue destruido\n");
         return -1;
     }
-    // if(queue->total+1 >= queue->max_len){
-    //     fprintf(stderr, "tentou enviar msg pra queue cheia\n");
-    //     // semaforo aki
-    //     return -1;
-    // }
 
     if(sem_down(&(queue->vaga)) != 0) return -1;
     if(sem_down(&(queue->buff)) != 0) return -1;
 
     // APPEND //
-    // queue->msgs[queue->append] = msg;
     memcpy(queue->msgs[queue->append], msg, queue->ofsize);
     queue->append = (queue->append+1)%queue->max_len;
     queue->total++;
@@ -227,11 +221,7 @@ int mqueue_recv (mqueue_t *queue, void *msg){
         fprintf(stderr, "tentou operar em um mqueue destruido\n");
         return -1;
     }
-    // if(queue->total == 0){
-    //     fprintf(stderr, "tentou receber msg de queue vazia\n");
-    //     // semaforo aki
-    //     return -1;
-    // }
+
     if(sem_down(&(queue->item)) != 0) return -1;
     if(sem_down(&(queue->buff)) != 0) return -1;
 
